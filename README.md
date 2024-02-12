@@ -141,3 +141,15 @@ Below are some examples in the example config for my FBV Express Mk II. This con
 }
 ```
 
+## Developing
+
+To contribute and develop, make sure you have Rust toolchain installed in your dev environment.
+
+```sh
+git clone https://github.com/armand1m/miditokeydaemon.git
+cd ./miditokeydaemon
+RUST_LOG=debug cargo run
+```
+
+You should have the daemon running in development mode now.
+
