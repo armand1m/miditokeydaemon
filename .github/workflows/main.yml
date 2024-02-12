@@ -11,13 +11,15 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
+      - name: Install system dependencies 
+        run: sudo apt install librust-alsa-sys-dev 
+
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-
       - name: Run cargo check
         uses: actions-rs/cargo@v1
         with:
@@ -29,6 +31,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+
+      - name: Install system dependencies 
+        run: sudo apt install librust-alsa-sys-dev 
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -49,6 +54,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+
+      - name: Install system dependencies 
+        run: sudo apt install librust-alsa-sys-dev 
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -77,6 +85,9 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
+
+      - name: Install system dependencies 
+        run: sudo apt install librust-alsa-sys-dev 
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
