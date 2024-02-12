@@ -2,6 +2,7 @@ use config::{Config, File, FileFormat};
 use enigo::{Enigo, KeyboardControllable};
 use log;
 use midir::{MidiInput, MidiInputPort};
+use std::thread;
 use std::time::Duration;
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -40,7 +41,7 @@ pub struct VelocityScale {
 fn main() {
     env_logger::init();
 
-    let config_file_path = shellexpand::tilde("~/.miditokeyrc");
+    let config_file_path = shellexpand::tilde("~/.miditokeydaemonrc");
 
     let config = Config::builder()
         .add_source(File::new(&config_file_path, FileFormat::Json))
@@ -75,7 +76,7 @@ fn main() {
 
     let port = device_ports
         .get(0)
-        .expect("No MIDI ports available for the specified 'device_port_name'");
+        .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
 
     let port_name = midi_input.port_name(port).unwrap();
 
@@ -146,12 +147,15 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
             enigo.key_sequence_parse(keymap.as_str());
         }
 
-        if let Some(original_command) = &mapping.command {
+        if let Some(command) = &mapping.command {
             // TODO: add debouncing logic
-            let command = original_command.clone();
             let command_str = command.as_str();
-            let err_message = format!("'{}' command failed to start", command_str);
 
+            if command_str == "" {
+                continue;
+            }
+
+            let err_message = format!("'{}' command failed to start", command_str);
             let mut process = std::process::Command::new("sh");
 
             let computed_velocity = get_computed_velocity(device_velocity, mapping);
@@ -159,7 +163,7 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
                 process.env("MIDI_VELOCITY", format!("{}", velocity_value));
             }
 
-            log::debug!("Running command: sh -c {}", command.clone());
+            log::debug!("Running command: sh -c {}", command_str);
 
             process
                 .arg("-c")
@@ -168,7 +172,7 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
                 .expect(&err_message);
         }
 
-        // TODO: add mouse event
+        // TODO: add mouse event capture
     }
 
     Ok(())
