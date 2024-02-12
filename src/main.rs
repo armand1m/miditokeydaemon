@@ -1,6 +1,6 @@
 use config::{Config, File, FileFormat};
 use enigo::{Enigo, KeyboardControllable};
-use log;
+
 use midir::{MidiInput, MidiInputPort};
 use std::thread;
 use std::time::Duration;
@@ -74,8 +74,7 @@ fn main() {
         })
         .collect();
 
-    let port = device_ports
-        .get(0)
+    let port = device_ports.first()
         .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
 
     let port_name = midi_input.port_name(port).unwrap();
@@ -84,7 +83,7 @@ fn main() {
 
     let _connection = midi_input
         .connect(
-            port.into(),
+            port,
             port_name.as_str(),
             move |timestamp, message, settings| {
                 log::debug!("[{}] Received MIDI message: {:?}", timestamp, message);
@@ -151,7 +150,7 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
             // TODO: add debouncing logic
             let command_str = command.as_str();
 
-            if command_str == "" {
+            if command_str.is_empty() {
                 continue;
             }
 
