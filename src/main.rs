@@ -51,18 +51,14 @@ fn main() {
     let midi_input = MidiInput::new("miditokeydaemon").expect("Failed to read MIDI input.");
 
     let ports = midi_input.ports();
-    let port = ports.iter().find_map(|port| {
+    let port = ports.iter().find(|port| {
         let port_name = midi_input
-            .port_name(&port)
+            .port_name(port)
             .expect("Failed to read port name.");
 
         log::debug!("Port found: {:?}", port_name);
 
-        if port_name.contains(&settings.device_port_name) {
-            Some(port)
-        } else {
-            None
-        }
+        port_name.contains(&settings.device_port_name)
     })
     .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
 
@@ -100,11 +96,9 @@ fn get_settings() -> Settings {
         .build()
         .expect("Failed to read configuration file");
 
-    let settings = config
+    config
         .try_deserialize::<Settings>()
-        .expect("Failed to deserialize daemon settings.");
-
-    settings
+        .expect("Failed to deserialize daemon settings.")
 }
 
 /// This function checks if the actual velocity matches the mapping velocity.
@@ -179,7 +173,7 @@ fn process_midi_message(
                 continue;
             }
 
-            let debounce_duration = get_debounce_duration(&mapping);
+            let debounce_duration = get_debounce_duration(mapping);
 
             let state_key = debounce_state
                 .clone()
