@@ -1,6 +1,6 @@
 use config::{Config, File, FileFormat};
 use enigo::Enigo;
-use midir::{MidiInput, MidiInputPort};
+use midir::MidiInput;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -8,9 +8,6 @@ mod enigo_dsl;
 
 /// Define a static mutable variable to hold the time of the last command execution.
 static mut LAST_EXECUTION: Option<Instant> = None;
-
-/// Define the debounce duration.
-const DEBOUNCE_DURATION: Duration = Duration::from_millis(200); // 200 ms
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct Settings {
@@ -36,7 +33,7 @@ pub struct MidiMapOptions {
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct MidiMapVelocityOptions {
-    pub debounce: Option<bool>,
+    pub debounce: Option<u64>,
     pub scale: Option<VelocityScale>,
 }
 
@@ -55,16 +52,29 @@ fn main() {
 
     let midi_input = MidiInput::new("miditokeydaemon").expect("Failed to read MIDI input.");
 
-    let port = get_device_port(&midi_input, &settings.device_port_name)
-        .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
+    let ports = midi_input.ports();
+    let port = ports.iter().find_map(|port| {
+        let port_name = midi_input
+            .port_name(&port)
+            .expect("Failed to read port name.");
 
-    let port_name = midi_input.port_name(&port).unwrap();
+        log::debug!("Port found: {:?}", port_name);
+
+        if port_name.contains(&settings.device_port_name) {
+            Some(port)
+        } else {
+            None
+        }
+    })
+    .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
+
+    let port_name = midi_input.port_name(port).unwrap();
 
     log::debug!("Selected MIDI Port: {}", port_name);
 
     let _connection = midi_input
         .connect(
-            &port,
+            port,
             port_name.as_str(),
             move |timestamp, message, settings| {
                 log::debug!("[{}] Received MIDI message: {:?}", timestamp, message);
@@ -97,23 +107,6 @@ fn get_settings() -> Settings {
     settings
 }
 
-/// This function returns the MIDI port for the specified device port name.
-fn get_device_port(midi_input: &MidiInput, device_port_name: &str) -> Option<MidiInputPort> {
-    midi_input.ports().into_iter().find_map(|port| {
-        let port_name = midi_input
-            .port_name(&port)
-            .expect("Failed to read port name.");
-
-        log::debug!("Port found: {:?}", port_name);
-
-        if port_name.contains(device_port_name) {
-            Some(port)
-        } else {
-            None
-        }
-    })
-}
-
 /// This function checks if the actual velocity matches the mapping velocity.
 /// If the mapping velocity is not specified, it returns true.
 fn match_velocity(velocity: Option<u8>, mapping: &MidiMap) -> bool {
@@ -131,6 +124,17 @@ fn get_computed_velocity(velocity: Option<u8>, mapping: &MidiMap) -> Option<u8> 
         Some(scale) => Some(scale_value(velocity?, scale.min, scale.max)),
         None => velocity,
     }
+}
+
+fn get_debounce_duration(mapping: &MidiMap) -> Duration {
+    let duration_value = mapping
+        .options
+        .clone()
+        .and_then(|o| o.velocity)
+        .and_then(|v| v.debounce)
+        .unwrap_or(200);
+
+    Duration::from_millis(duration_value)
 }
 
 /// This function processes a MIDI message based on the settings.
@@ -158,7 +162,6 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
 
         if let Some(keymap) = &mapping.keymap {
             log::debug!("Parsing keymap: {}", keymap);
-
             if let Err(err) = enigo_dsl::eval(&mut enigo, keymap.as_str()) {
                 log::error!("Failed to parse keymap {}", keymap);
                 log::error!("{:?}", err);
@@ -172,9 +175,11 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
                 continue;
             }
 
+            let debounce_duration = get_debounce_duration(&mapping);
+
             unsafe {
                 if let Some(last_execution) = LAST_EXECUTION {
-                    if last_execution.elapsed() < DEBOUNCE_DURATION {
+                    if last_execution.elapsed() < debounce_duration {
                         continue;
                     }
                 }
@@ -186,10 +191,10 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
 
             let computed_velocity = get_computed_velocity(device_velocity, mapping);
             if let Some(velocity_value) = computed_velocity {
+                log::debug!("Running command: sh -c {}", command_str);
+                log::debug!("With $MIDI_VELOCITY being '{}'", velocity_value);
                 process.env("MIDI_VELOCITY", format!("{}", velocity_value));
             }
-
-            log::debug!("Running command: sh -c {}", command_str);
 
             process
                 .arg("-c")

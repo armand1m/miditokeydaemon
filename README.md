@@ -12,13 +12,13 @@ _(I mean, it is free. I already put the work for you, just use it!)_
 - [x] Support JSON configuration on `~/.miditokeydaemonrc`
 - [x] Allow for multiple keymaps based on velocity values and CC notes
 - [x] Allow for shell commands to be used for specific MIDI commands
-    - [ ] Deboucing for velocity based commands
+    - [x] Debouncing for velocity-based commands can be set using the `options.velocity.debounce` property in a midi mapping.
     - [x] Set env vars for variable MIDI properties:
         - [x] Velocity: Available as the `$MIDI_VELOCITY` env var
 - [x] Allow for rescaling velocity levels to a specific range.
     - Velocity ranges are usually from 0 to 127, and one might want to increase or decrease this range. The configuration file supports setting a range for velocity messages being used in commands.
 - [ ] Support for mouse events
-- [ ] Specify configuration file path
+- [ ] Specify custom configuration file path
 
 ## How to install
 
@@ -137,8 +137,9 @@ Below are some examples in the example config for my FBV Express Mk II. This con
     {
       "midi_id": 176,
       "note": 7,
-      "command": "echo \"your hypothetical set volume to $MIDI_VELOCITY command\"",
+      "command": "osascript -e \"set Volume $MIDI_VELOCITY\"",
       "options": {
+        "debounce": 50,
         "velocity": {
           "scale": {
             "min": 0,
