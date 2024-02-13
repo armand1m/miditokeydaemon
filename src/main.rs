@@ -1,13 +1,11 @@
 use config::{Config, File, FileFormat};
 use enigo::Enigo;
 use midir::MidiInput;
+use std::collections::HashMap;
 use std::thread;
 use std::time::{Duration, Instant};
 
 mod enigo_dsl;
-
-/// Define a static mutable variable to hold the time of the last command execution.
-static mut LAST_EXECUTION: Option<Instant> = None;
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct Settings {
@@ -72,15 +70,17 @@ fn main() {
 
     log::debug!("Selected MIDI Port: {}", port_name);
 
+    let debounce_state: HashMap<String, Instant> = HashMap::new();
+
     let _connection = midi_input
         .connect(
             port,
             port_name.as_str(),
-            move |timestamp, message, settings| {
+            move |timestamp, message, (settings, debounce_state)| {
                 log::debug!("[{}] Received MIDI message: {:?}", timestamp, message);
-                let _ = process_midi_message(message, settings);
+                let _ = process_midi_message(message, settings, debounce_state);
             },
-            settings,
+            (settings, debounce_state),
         )
         .expect("Failed to connect to MIDI input port");
 
@@ -140,7 +140,11 @@ fn get_debounce_duration(mapping: &MidiMap) -> Duration {
 /// This function processes a MIDI message based on the settings.
 /// It checks each mapping in the settings, and if the MIDI ID, note, and velocity match the mapping,
 /// it executes the associated action.
-fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyhow::Error> {
+fn process_midi_message(
+    message: &[u8],
+    settings: &Settings,
+    debounce_state: &mut HashMap<String, Instant>,
+) -> Result<(), anyhow::Error> {
     let (midi_id, note, device_velocity) = (message[0], message[1], message.get(2).cloned());
 
     let mut enigo = Enigo::new();
@@ -177,14 +181,19 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
 
             let debounce_duration = get_debounce_duration(&mapping);
 
-            unsafe {
-                if let Some(last_execution) = LAST_EXECUTION {
-                    if last_execution.elapsed() < debounce_duration {
-                        continue;
-                    }
+            let state_key = debounce_state
+                .clone()
+                .into_keys()
+                .find(|k| k == command_str);
+
+            if let Some(key) = state_key {
+                let last_execution = debounce_state.get_mut(&key).unwrap();
+                if last_execution.elapsed() < debounce_duration {
+                    log::debug!("Debouncing command: {}", command_str);
+                    continue;
                 }
-                LAST_EXECUTION = Some(Instant::now());
             }
+            debounce_state.insert(command_str.to_string(), Instant::now());
 
             let err_message = format!("'{}' command failed to start", command_str);
             let mut process = std::process::Command::new("sh");
