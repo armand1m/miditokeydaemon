@@ -24,7 +24,9 @@ _(I mean, it is free. I already put the work for you, just use it!)_
 
 ### macOS
 
-Download the binary from the Github Releases archive and install it into `/usr/local/bin/miditokeydaemon`.
+For now you'll have to clone and build this repository locally with `cargo build --release`.
+
+In the future, you'll be able to download the built binary for your platform from the Github Releases archive and install it into `/usr/local/bin/miditokeydaemon`.
 
 Run the following script to register the `miditokeydaemon` as a background process:
 
@@ -87,6 +89,14 @@ You can check if the process is running:
 ```sh
 ps aux | grep miditokeydaemon
 ```
+
+### Windows and Linux
+
+For now you'll have to clone and build this repository locally with `cargo build --release`.
+
+Prepare the daemon-manager/scheduler of your choice in your OS.
+
+Now you should prepare your config at `~/.miditokeydaemonrc` and start the service on your daemon-manager.
 
 ## Example config
 

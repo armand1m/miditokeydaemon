@@ -1,9 +1,16 @@
 use config::{Config, File, FileFormat};
-use enigo::{Enigo, KeyboardControllable};
-
+use enigo::Enigo;
 use midir::{MidiInput, MidiInputPort};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+mod enigo_dsl;
+
+/// Define a static mutable variable to hold the time of the last command execution.
+static mut LAST_EXECUTION: Option<Instant> = None;
+
+/// Define the debounce duration.
+const DEBOUNCE_DURATION: Duration = Duration::from_millis(200); // 200 ms
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct Settings {
@@ -19,6 +26,7 @@ pub struct MidiMap {
     pub velocity: Option<u8>,
     pub command: Option<String>,
     pub options: Option<MidiMapOptions>,
+    pub mouse: Option<String>,
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -41,49 +49,22 @@ pub struct VelocityScale {
 fn main() {
     env_logger::init();
 
-    let config_file_path = shellexpand::tilde("~/.miditokeydaemonrc");
-
-    let config = Config::builder()
-        .add_source(File::new(&config_file_path, FileFormat::Json))
-        .build()
-        .expect("Failed to read configuration file");
-
-    let settings = config
-        .try_deserialize::<Settings>()
-        .expect("Failed to deserialize daemon settings.");
+    let settings = get_settings();
 
     log::debug!("Settings: {:#?}", settings);
 
     let midi_input = MidiInput::new("miditokeydaemon").expect("Failed to read MIDI input.");
 
-    let device_ports: Vec<MidiInputPort> = midi_input
-        .ports()
-        .into_iter()
-        .filter_map(|port| {
-            let port_name = midi_input
-                .port_name(&port)
-                .expect("Failed to read port name.");
-
-            log::debug!("Port found: {:?}", port_name);
-
-            if port_name.contains(&settings.device_port_name) {
-                return Some(port);
-            }
-
-            None
-        })
-        .collect();
-
-    let port = device_ports.first()
+    let port = get_device_port(&midi_input, &settings.device_port_name)
         .expect("No MIDI ports available for the specified 'device_port_name' property in the configuration.");
 
-    let port_name = midi_input.port_name(port).unwrap();
+    let port_name = midi_input.port_name(&port).unwrap();
 
     log::debug!("Selected MIDI Port: {}", port_name);
 
     let _connection = midi_input
         .connect(
-            port,
+            &port,
             port_name.as_str(),
             move |timestamp, message, settings| {
                 log::debug!("[{}] Received MIDI message: {:?}", timestamp, message);
@@ -100,15 +81,49 @@ fn main() {
     }
 }
 
-fn match_velocity(velocity: Option<u8>, mapping: &MidiMap) -> bool {
-    if let Some(mapping_velocity) = mapping.velocity {
-        if let Some(actual_velocity) = velocity {
-            return actual_velocity == mapping_velocity;
-        }
-    }
-    true
+/// This function reads the settings from the configuration file.
+fn get_settings() -> Settings {
+    let config_file_path = shellexpand::tilde("~/.miditokeydaemonrc");
+
+    let config = Config::builder()
+        .add_source(File::new(&config_file_path, FileFormat::Json))
+        .build()
+        .expect("Failed to read configuration file");
+
+    let settings = config
+        .try_deserialize::<Settings>()
+        .expect("Failed to deserialize daemon settings.");
+
+    settings
 }
 
+/// This function returns the MIDI port for the specified device port name.
+fn get_device_port(midi_input: &MidiInput, device_port_name: &str) -> Option<MidiInputPort> {
+    midi_input.ports().into_iter().find_map(|port| {
+        let port_name = midi_input
+            .port_name(&port)
+            .expect("Failed to read port name.");
+
+        log::debug!("Port found: {:?}", port_name);
+
+        if port_name.contains(device_port_name) {
+            Some(port)
+        } else {
+            None
+        }
+    })
+}
+
+/// This function checks if the actual velocity matches the mapping velocity.
+/// If the mapping velocity is not specified, it returns true.
+fn match_velocity(velocity: Option<u8>, mapping: &MidiMap) -> bool {
+    mapping.velocity.map_or(true, |mapping_velocity| {
+        velocity.map_or(true, |actual_velocity| actual_velocity == mapping_velocity)
+    })
+}
+
+/// This function computes the velocity based on the mapping options.
+/// If the scale is specified, it scales the velocity; otherwise, it returns the original velocity.
 fn get_computed_velocity(velocity: Option<u8>, mapping: &MidiMap) -> Option<u8> {
     let velocity_scale = mapping.options.clone()?.velocity?.scale;
 
@@ -118,18 +133,18 @@ fn get_computed_velocity(velocity: Option<u8>, mapping: &MidiMap) -> Option<u8> 
     }
 }
 
+/// This function processes a MIDI message based on the settings.
+/// It checks each mapping in the settings, and if the MIDI ID, note, and velocity match the mapping,
+/// it executes the associated action.
 fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyhow::Error> {
-    let midi_id = message[0];
-    let note = message[1];
-    let device_velocity = message.get(2).cloned();
+    let (midi_id, note, device_velocity) = (message[0], message[1], message.get(2).cloned());
 
     let mut enigo = Enigo::new();
 
     for mapping in &settings.midi_mapping {
-        let match_command = midi_id == mapping.midi_id;
-        let match_note = note == mapping.note;
-        let matches_velocity = match_velocity(device_velocity, mapping);
-        let mapping_match = match_command && match_note && matches_velocity;
+        let mapping_match = midi_id == mapping.midi_id
+            && note == mapping.note
+            && match_velocity(device_velocity, mapping);
 
         if !mapping_match {
             continue;
@@ -142,16 +157,28 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
         );
 
         if let Some(keymap) = &mapping.keymap {
-            log::debug!("Parsing key sequence: {}", keymap);
-            enigo.key_sequence_parse(keymap.as_str());
+            log::debug!("Parsing keymap: {}", keymap);
+
+            if let Err(err) = enigo_dsl::eval(&mut enigo, keymap.as_str()) {
+                log::error!("Failed to parse keymap {}", keymap);
+                log::error!("{:?}", err);
+            }
         }
 
         if let Some(command) = &mapping.command {
-            // TODO: add debouncing logic
             let command_str = command.as_str();
 
             if command_str.is_empty() {
                 continue;
+            }
+
+            unsafe {
+                if let Some(last_execution) = LAST_EXECUTION {
+                    if last_execution.elapsed() < DEBOUNCE_DURATION {
+                        continue;
+                    }
+                }
+                LAST_EXECUTION = Some(Instant::now());
             }
 
             let err_message = format!("'{}' command failed to start", command_str);
@@ -170,13 +197,12 @@ fn process_midi_message(message: &[u8], settings: &Settings) -> Result<(), anyho
                 .spawn()
                 .expect(&err_message);
         }
-
-        // TODO: add mouse event capture
     }
 
     Ok(())
 }
 
+/// This function scales the input value to the specified range.
 fn scale_value(input: u8, min: u8, max: u8) -> u8 {
     let range = max as f32 - min as f32;
     let scale_factor = range / 127.0;
