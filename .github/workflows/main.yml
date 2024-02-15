@@ -89,51 +89,16 @@ jobs:
             archive: zip
           - target: x86_64-unknown-linux-musl
             archive: tar.gz tar.xz tar.zst
+            pre_build: "./github/workflows/pre.sh"
           - target: x86_64-apple-darwin
             archive: zip
     steps:
       - uses: actions/checkout@master
-      - name: Install system dependencies 
-        run: sudo apt install librust-alsa-sys-dev libfl-dev libxdo-dev
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRE_BUILD: ".github/workflows/pre.sh"
         with:
+          PRE_BUILD: ${{ matrix.pre_build}}
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
-
-#   builds:
-#     name: Builds 
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout sources
-#         uses: actions/checkout@v2
-
-#       - name: Install system dependencies 
-#         run: sudo apt install librust-alsa-sys-dev libfl-dev libxdo-dev
-    
-#       - name: Build for Linux
-#         run: |
-#             rustup target add x86_64-unknown-linux-gnu
-#             cargo build --release --target x86_64-unknown-linux-gnu
-    
-#       - name: Build for Windows
-#         run: |
-#             rustup target add x86_64-pc-windows-msvc
-#             cargo build --release --target x86_64-pc-windows-msvc
-    
-#       - name: Build for macOS
-#         run: |
-#             rustup target add x86_64-apple-darwin
-#             cargo build --release --target x86_64-apple-darwin
-    
-#       - name: Archive artifacts
-#         uses: actions/upload-artifact@v2
-#         with:
-#           name: binaries
-#           path: |
-#             target/x86_64-unknown-linux-gnu/release/miditokeydaemon
-#             target/x86_64-pc-windows-msvc/release/miditokeydaemon.exe
-#             target/x86_64-apple-darwin/release/miditokeydaemon
