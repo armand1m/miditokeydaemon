@@ -199,11 +199,7 @@ fn process_midi_message(
                 process.env("MIDI_VELOCITY", format!("{}", velocity_value));
             }
 
-            process
-                .arg("-c")
-                .arg(command)
-                .spawn()
-                .expect(&err_message);
+            process.arg("-c").arg(command).spawn().expect(&err_message);
         }
     }
 
