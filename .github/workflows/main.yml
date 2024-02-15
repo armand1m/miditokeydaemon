@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Install system dependencies 
-        run: sudo apt install librust-alsa-sys-dev libfl-dev gcc-multilib linux-headers-$(uname -r)
+        run: sudo apt install librust-alsa-sys-dev libfl-dev libxdo-dev
 
       - name: Run cargo build 
         uses: actions-rs/cargo@v1
