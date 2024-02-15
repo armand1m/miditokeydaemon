@@ -88,9 +88,21 @@ jobs:
 
       - name: Install system dependencies 
         run: sudo apt install librust-alsa-sys-dev libfl-dev libxdo-dev
-
-      - name: Run cargo build 
-        uses: actions-rs/cargo@v1
+    
+      - name: Build for Linux
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+    
+      - name: Build for Windows
+        run: cargo build --release --target x86_64-pc-windows-msvc
+    
+      - name: Build for macOS
+        run: cargo build --release --target x86_64-apple-darwin
+    
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
         with:
-          command: build
-          args: --release
+          name: binaries
+          path: |
+            target/x86_64-unknown-linux-gnu/release/miditokeydaemon
+            target/x86_64-pc-windows-msvc/release/miditokeydaemon.exe
+            target/x86_64-apple-darwin/release/miditokeydaemon

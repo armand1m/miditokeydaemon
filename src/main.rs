@@ -166,10 +166,10 @@ fn process_midi_message(
             }
         }
 
-        if let Some(command) = &mapping.command {
-            let command_str = command.as_str();
+        if let Some(mapping_command) = &mapping.command {
+            let command = mapping_command.as_str();
 
-            if command_str.is_empty() {
+            if command.is_empty() {
                 continue;
             }
 
@@ -178,30 +178,30 @@ fn process_midi_message(
             let state_key = debounce_state
                 .clone()
                 .into_keys()
-                .find(|k| k == command_str);
+                .find(|key| key == command);
 
             if let Some(key) = state_key {
                 let last_execution = debounce_state.get_mut(&key).unwrap();
                 if last_execution.elapsed() < debounce_duration {
-                    log::debug!("Debouncing command: {}", command_str);
+                    log::debug!("Debouncing command: {}", command);
                     continue;
                 }
             }
-            debounce_state.insert(command_str.to_string(), Instant::now());
+            debounce_state.insert(command.to_string(), Instant::now());
 
-            let err_message = format!("'{}' command failed to start", command_str);
+            let err_message = format!("'{}' command failed to start", command);
             let mut process = std::process::Command::new("sh");
 
             let computed_velocity = get_computed_velocity(device_velocity, mapping);
             if let Some(velocity_value) = computed_velocity {
-                log::debug!("Running command: sh -c {}", command_str);
+                log::debug!("Running command: sh -c {}", command);
                 log::debug!("With $MIDI_VELOCITY being '{}'", velocity_value);
                 process.env("MIDI_VELOCITY", format!("{}", velocity_value));
             }
 
             process
                 .arg("-c")
-                .arg(command_str)
+                .arg(command)
                 .spawn()
                 .expect(&err_message);
         }
